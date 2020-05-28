@@ -15,6 +15,7 @@
 #include "llvm/DebugInfo/DWARF/DWARFDebugLoc.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/JSON.h"
+#include <iostream>
 
 #define DEBUG_TYPE "dwarfdump"
 using namespace llvm;
@@ -77,6 +78,8 @@ struct GlobalStats {
   /// Total number of PC range bytes covered by DW_AT_locations with
   /// the debug entry values (DW_OP_entry_value).
   unsigned ScopeEntryValueBytesCovered = 0;
+  /// HACK: List of all the ids of all formal parameters.
+  StringSet<> ParamIDs;
   /// Total number of PC range bytes covered by DW_AT_locations of
   /// formal parameters.
   unsigned ParamScopeBytesCovered = 0;
@@ -237,6 +240,15 @@ static void collectStatsForDie(DWARFDie Die, std::string FnPrefix,
   if (IsLocalVar && Die.find(dwarf::DW_AT_declaration))
     return;
 
+  // HACK: only count non header files.
+  if (IsParam) {
+    std::string ParamID = constructDieID(Die);
+    if (ParamID.find(".c:") == std::string::npos && ParamID.find(".cpp:") == std::string::npos) {
+      return;
+    }
+    GlobalStats.ParamIDs.insert(ParamID);
+  }
+  
   if (Die.findRecursively(dwarf::DW_AT_decl_file) &&
       Die.findRecursively(dwarf::DW_AT_decl_line))
     HasSrcLoc = true;
@@ -646,7 +658,9 @@ bool dwarfdump::collectStatsForObjectFile(ObjectFile &Obj, DWARFContext &DICtx,
              GlobalStats.InlineFunctionSize);
 
   // Print the summary for formal parameters.
-  printDatum(OS, "#params", ParamTotal);
+  // HACK: Print unique parameters so that we don't double count inlined
+  // functions.
+  printDatum(OS, "#params", GlobalStats.ParamIDs.size());
   printDatum(OS, "#params with source location", ParamWithSrcLoc);
   printDatum(OS, "#params with type", ParamWithType);
   printDatum(OS, "#params with binary location", ParamWithLoc);
